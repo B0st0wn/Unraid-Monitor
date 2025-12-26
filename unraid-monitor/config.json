@@ -57,6 +57,5 @@
     },
     "use_graphql": "bool?"
   },
-  "services": ["mqtt:want"],
-  "image": "ghcr.io/b0st0wn/hass-unraid-addon-{arch}"
+  "services": ["mqtt:want"]
 }
