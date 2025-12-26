@@ -20,7 +20,7 @@ Monitor your Unraid server(s) and publish metrics to Home Assistant via MQTT.
 3. Select **Repositories**
 4. Add this repository URL:
    ```
-   https://github.com/B0st0wn/hass-unraid
+   https://github.com/B0st0wn/Unraid-Monitor
    ```
 5. Click **Add** and refresh the page
 
