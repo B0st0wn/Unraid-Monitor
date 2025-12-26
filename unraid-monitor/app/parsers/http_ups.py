@@ -29,9 +29,14 @@ async def fetch_ups_http(server, create_config: bool = False):
                     response = await client.get(
                         f'{server.unraid_url}{endpoint}',
                         headers=headers,
-                        timeout=30.0,
+                        timeout=15.0,  # Reduced from 30s to fail faster
                         follow_redirects=True
                     )
+
+                    # Check for 504 Gateway Timeout
+                    if response.status_code == 504:
+                        server.logger.warning(f"HTTP UPS: 504 Gateway Timeout from {endpoint}")
+                        continue
 
                     # Check if we got redirected to login
                     if '/login' in str(response.url):

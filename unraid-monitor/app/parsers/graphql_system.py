@@ -60,8 +60,9 @@ async def system_metrics_graphql(server, create_config=True):
                             messages_received += 1
                         elif '<' in msg_data:
                             # HTML data - likely temperature
+                            server.logger.debug(f"WebSocket temperature data received ({len(msg_data)} chars)")
                             await parsers.temperature(server, msg_data, create_config=create_config)
-                            server.logger.debug("Temperature sensors fetched via WebSocket")
+                            server.logger.info("Temperature sensors fetched via WebSocket")
                             temperature_received = True
                             messages_received += 1
 
@@ -94,15 +95,26 @@ async def fetch_temperature_http(server, create_config=True):
     try:
         async with httpx.AsyncClient(verify=False) as client:
             headers = {'Cookie': server.unraid_cookie}
+            server.logger.info("Attempting HTTP fallback for temperature data...")
+
             response = await client.get(
                 f'{server.unraid_url}/Dashboard',
                 headers=headers,
                 timeout=10
             )
 
+            if response.status_code == 504:
+                server.logger.warning("Temperature HTTP: 504 Gateway Timeout - Unraid server is slow/overloaded")
+                return
+
             if response.status_code == 200:
                 # Extract temperature data from dashboard HTML
                 await parsers.temperature(server, response.text, create_config=create_config)
-                server.logger.debug("Temperature sensors fetched via HTTP fallback")
+                server.logger.info("Temperature sensors fetched successfully via HTTP fallback")
+            else:
+                server.logger.warning(f"Temperature HTTP: Unexpected status {response.status_code}")
+
+    except httpx.TimeoutException as e:
+        server.logger.warning(f"Temperature HTTP: Request timed out after 10s - {e}")
     except Exception as e:
-        server.logger.debug(f"Failed to fetch temperature via HTTP: {e}")
+        server.logger.warning(f"Temperature HTTP: Failed - {e}")
