@@ -36,7 +36,7 @@ async def shares(self, msg_data, create_config):
                         'fill': 'ssz',
                         'number': '.'
                     }
-                    r = await http.get(f'{self.unraid_url}/webGui/include/ShareList.php', params=params, headers=headers, timeout=600)
+                    r = await http.get(f'{self.unraid_url}/webGui/include/ShareList.php', params=params, headers=headers, timeout=30)
                 else:
                     headers = {'Cookie': self.unraid_cookie}
                     data = {
@@ -45,7 +45,7 @@ async def shares(self, msg_data, create_config):
                         'all': 1,
                         'csrf_token': self.csrf_token
                     }
-                    r = await http.request("GET", url=f'{self.unraid_url}/webGui/include/ShareList.php', data=data, headers=headers, timeout=600)
+                    r = await http.request("GET", url=f'{self.unraid_url}/webGui/include/ShareList.php', data=data, headers=headers, timeout=30)
 
                 if r.status_code == httpx.codes.OK:
                     tree = etree.HTML(r.text)

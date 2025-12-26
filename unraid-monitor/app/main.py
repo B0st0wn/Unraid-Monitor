@@ -148,8 +148,8 @@ class UnRAIDServer(object):
 
     async def mqtt_reconnect(self):
         """Reconnect to MQTT broker with exponential backoff"""
-        retry_delay = 5
-        max_retry_delay = 300  # Max 5 minutes between retries
+        retry_delay = 2
+        max_retry_delay = 30  # Max 30 seconds between retries
 
         while not self.mqtt_connected:
             try:
@@ -354,7 +354,7 @@ class UnRAIDServer(object):
                 'password': self.unraid_password
             }
             async with httpx.AsyncClient() as http:
-                r = await http.post(f'{self.unraid_url}/login', data=payload, timeout=120)
+                r = await http.post(f'{self.unraid_url}/login', data=payload, timeout=15)
                 self.unraid_cookie = r.headers.get('set-cookie')
                 self.cookie_last_refresh = time.time()
                 self.logger.info('Unraid session cookie refreshed')
@@ -630,7 +630,7 @@ class UnRAIDServer(object):
 
                         while self.mqtt_connected:
                             try:
-                                data = await asyncio.wait_for(websocket.recv(), timeout=120)
+                                data = await asyncio.wait_for(websocket.recv(), timeout=15)
                                 last_msg = data
 
                                 # Parse message data with error handling

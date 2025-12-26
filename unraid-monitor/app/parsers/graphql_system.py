@@ -28,7 +28,7 @@ async def system_metrics_graphql(server, create_config=True):
         try:
             async with websockets.connect(websocket_url, subprotocols=subprotocols, extra_headers=headers, close_timeout=5) as ws:
                 # Wait for both messages with timeout
-                timeout_time = asyncio.get_event_loop().time() + 15
+                timeout_time = asyncio.get_event_loop().time() + 5
                 messages_received = 0
 
                 while asyncio.get_event_loop().time() < timeout_time and messages_received < 2:

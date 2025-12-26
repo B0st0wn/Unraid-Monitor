@@ -17,9 +17,9 @@
         "username": "root",
         "password": "",
         "api_key": "",
-        "scan_interval": 30,
-        "ups_scan_interval": 15,
-        "system_scan_interval": 15
+        "scan_interval": 5,
+        "ups_scan_interval": 5,
+        "system_scan_interval": 5
       }
     ],
     "mqtt": {
@@ -42,9 +42,9 @@
         "username": "str",
         "password": "password",
         "api_key": "str?",
-        "scan_interval": "int(10,3600)?",
-        "ups_scan_interval": "int(10,3600)?",
-        "system_scan_interval": "int(10,3600)?"
+        "scan_interval": "int(5,3600)?",
+        "ups_scan_interval": "int(5,3600)?",
+        "system_scan_interval": "int(5,3600)?"
       }
     ],
     "mqtt": {

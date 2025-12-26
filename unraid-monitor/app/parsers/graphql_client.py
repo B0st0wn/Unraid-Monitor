@@ -39,7 +39,7 @@ async def graphql_query(server, query_string, operation_name=""):
                 f'{server.unraid_url}/graphql',
                 json=graphql_request,
                 headers=headers,
-                timeout=30
+                timeout=10
             )
 
             if response.status_code == 200:
