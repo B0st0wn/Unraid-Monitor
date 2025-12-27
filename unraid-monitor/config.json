@@ -1,6 +1,6 @@
 {
   "name": "Unraid Monitor",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "slug": "unraid-monitor",
   "description": "Monitor Unraid servers via MQTT with GraphQL support",
   "arch": ["amd64", "aarch64", "armv7"],
