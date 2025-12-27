@@ -91,7 +91,7 @@ class UnRAIDServer(object):
         pass
 
     def on_disconnect(self, client, packet, exc=None):
-        self.logger.error('Disconnected from mqtt server')
+        self.logger.error(f'Disconnected from mqtt server - packet: {packet}, exc: {exc}')
         self.mqtt_connected = False
 
         # Cancel all background tasks before attempting reconnection
@@ -220,16 +220,27 @@ class UnRAIDServer(object):
             create_config.update(config_fields)
 
             try:
-                self.mqtt_client.publish(f'homeassistant/{sensor_type}/{unraid_sensor_id}/config', json.dumps(create_config), retain=True)
-            except Exception:
-                self.logger.exception('MQTT publish failed during discovery config')
+                config_topic = f'homeassistant/{sensor_type}/{unraid_sensor_id}/config'
+                result = self.mqtt_client.publish(config_topic, json.dumps(create_config), retain=True)
+                if hasattr(result, 'rc') and result.rc != 0:
+                    self.logger.error(f'MQTT config publish failed for {sensor_id}: rc={result.rc}, topic={config_topic}')
+                    self.mqtt_connected = False
+                    self.schedule_mqtt_reconnect('config publish failure')
+                    return
+            except Exception as e:
+                self.logger.exception(f'MQTT publish exception during discovery config for {sensor_id}: {e}')
                 self.mqtt_connected = False
-                self.schedule_mqtt_reconnect('publish failure')
+                self.schedule_mqtt_reconnect('config publish exception')
                 return
 
         if state_value is not None:
+            topic = f'{self.base_topic}/{unraid_id}/{sensor_id}/state'
             try:
-                self.mqtt_client.publish(f'{self.base_topic}/{unraid_id}/{sensor_id}/state', state_value, retain=retain)
+                result = self.mqtt_client.publish(topic, state_value, retain=retain)
+                if result.rc != 0:
+                    self.logger.warning(f'MQTT publish failed for {sensor_id}: rc={result.rc}')
+                else:
+                    self.logger.debug(f'MQTT published: {topic} = {state_value}')
             except Exception:
                 self.logger.exception('MQTT publish failed for state')
                 self.mqtt_connected = False
@@ -238,11 +249,17 @@ class UnRAIDServer(object):
 
         if json_attributes:
             try:
-                self.mqtt_client.publish(f'{self.base_topic}/{unraid_id}/{sensor_id}/attributes', json.dumps(json_attributes), retain=retain)
-            except Exception:
-                self.logger.exception('MQTT publish failed for attributes')
+                attr_topic = f'{self.base_topic}/{unraid_id}/{sensor_id}/attributes'
+                result = self.mqtt_client.publish(attr_topic, json.dumps(json_attributes), retain=retain)
+                if hasattr(result, 'rc') and result.rc != 0:
+                    self.logger.error(f'MQTT attributes publish failed for {sensor_id}: rc={result.rc}')
+                    self.mqtt_connected = False
+                    self.schedule_mqtt_reconnect('attributes publish failure')
+                    return
+            except Exception as e:
+                self.logger.exception(f'MQTT publish exception for attributes {sensor_id}: {e}')
                 self.mqtt_connected = False
-                self.schedule_mqtt_reconnect('publish failure')
+                self.schedule_mqtt_reconnect('attributes publish exception')
                 return
 
         if sensor_type == 'button':
@@ -494,6 +511,7 @@ class UnRAIDServer(object):
         """Fetch UPS data from GraphQL API (Unraid 7.2+)"""
         try:
             await asyncio.sleep(5)
+            self.logger.info('GraphQL UPS loop started')
 
             while self.mqtt_connected:
                 try:
@@ -509,6 +527,8 @@ class UnRAIDServer(object):
                     self.logger.exception("Failed to fetch GraphQL UPS info")
 
                 await asyncio.sleep(self.ups_scan_interval)
+
+            self.logger.warning(f'GraphQL UPS loop exited - mqtt_connected={self.mqtt_connected}')
         except asyncio.CancelledError:
             self.logger.info('GraphQL UPS loop cancelled')
             raise
@@ -517,9 +537,14 @@ class UnRAIDServer(object):
         """Fetch system metrics (RAM, Flash, Temps, Fans) via HTTP (Unraid 7.2+)"""
         try:
             await asyncio.sleep(5)
+            self.logger.info('GraphQL system loop started')
 
+            iteration = 0
             while self.mqtt_connected:
                 try:
+                    iteration += 1
+                    self.logger.debug(f'System loop iteration {iteration}, mqtt_connected={self.mqtt_connected}')
+
                     current_time = time.time()
                     if current_time - self.cookie_last_refresh > self.cookie_refresh_interval:
                         await self.refresh_unraid_session()
@@ -532,6 +557,8 @@ class UnRAIDServer(object):
                     self.logger.exception("Failed to fetch system metrics")
 
                 await asyncio.sleep(self.system_scan_interval)
+
+            self.logger.error(f'GraphQL system loop EXITED - mqtt_connected={self.mqtt_connected}, iteration={iteration}')
         except asyncio.CancelledError:
             self.logger.info('GraphQL system loop cancelled')
             raise
