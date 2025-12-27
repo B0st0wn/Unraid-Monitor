@@ -405,8 +405,10 @@ class UnRAIDServer(object):
             # Wait a bit before first run to let session establish
             await asyncio.sleep(5)
 
+            iteration = 0
             while self.mqtt_connected:
                 try:
+                    iteration += 1
                     # Refresh session cookie if needed (every 30 minutes)
                     current_time = time.time()
                     if current_time - self.cookie_last_refresh > self.cookie_refresh_interval:
@@ -419,8 +421,9 @@ class UnRAIDServer(object):
                     ini_data = await fetch_disk_data_graphql(self)
 
                     if ini_data:
-                        # Parse using existing disk parser
-                        await parsers.disks(self, ini_data, create_config=True)
+                        # Parse using existing disk parser - only send discovery on first iteration
+                        create_config = (iteration == 1)
+                        await parsers.disks(self, ini_data, create_config=create_config)
                     else:
                         self.logger.debug("GraphQL disk data fetch returned no data")
 
@@ -437,15 +440,19 @@ class UnRAIDServer(object):
         try:
             await asyncio.sleep(5)
 
+            iteration = 0
             while self.mqtt_connected:
                 try:
+                    iteration += 1
                     current_time = time.time()
                     if current_time - self.cookie_last_refresh > self.cookie_refresh_interval:
                         await self.refresh_unraid_session()
 
                     from parsers.graphql_docker import docker_containers
 
-                    await docker_containers(self, create_config=True)
+                    # Only send discovery config on first iteration
+                    create_config = (iteration == 1)
+                    await docker_containers(self, create_config=create_config)
 
                 except Exception:
                     self.logger.exception("Failed to fetch GraphQL Docker info")
@@ -460,15 +467,19 @@ class UnRAIDServer(object):
         try:
             await asyncio.sleep(5)
 
+            iteration = 0
             while self.mqtt_connected:
                 try:
+                    iteration += 1
                     current_time = time.time()
                     if current_time - self.cookie_last_refresh > self.cookie_refresh_interval:
                         await self.refresh_unraid_session()
 
                     from parsers.graphql_vms import vms_graphql
 
-                    await vms_graphql(self, create_config=True)
+                    # Only send discovery config on first iteration
+                    create_config = (iteration == 1)
+                    await vms_graphql(self, create_config=create_config)
 
                 except Exception:
                     self.logger.exception("Failed to fetch GraphQL VM info")
@@ -483,16 +494,20 @@ class UnRAIDServer(object):
         try:
             await asyncio.sleep(5)
 
+            iteration = 0
             while self.mqtt_connected:
                 try:
+                    iteration += 1
                     current_time = time.time()
                     if current_time - self.cookie_last_refresh > self.cookie_refresh_interval:
                         await self.refresh_unraid_session()
 
                     from parsers.graphql_array import array_status_graphql, parity_history_graphql
 
-                    await array_status_graphql(self, create_config=True)
-                    await parity_history_graphql(self, create_config=True)
+                    # Only send discovery config on first iteration
+                    create_config = (iteration == 1)
+                    await array_status_graphql(self, create_config=create_config)
+                    await parity_history_graphql(self, create_config=create_config)
 
                 except Exception:
                     self.logger.exception("Failed to fetch GraphQL array info")
@@ -507,15 +522,19 @@ class UnRAIDServer(object):
         try:
             await asyncio.sleep(5)
 
+            iteration = 0
             while self.mqtt_connected:
                 try:
+                    iteration += 1
                     current_time = time.time()
                     if current_time - self.cookie_last_refresh > self.cookie_refresh_interval:
                         await self.refresh_unraid_session()
 
                     from parsers.graphql_shares import shares_graphql
 
-                    await shares_graphql(self, create_config=True)
+                    # Only send discovery config on first iteration
+                    create_config = (iteration == 1)
+                    await shares_graphql(self, create_config=create_config)
 
                 except Exception:
                     self.logger.exception("Failed to fetch GraphQL shares info")
@@ -532,15 +551,19 @@ class UnRAIDServer(object):
             await asyncio.sleep(5)
             self.logger.info('GraphQL UPS loop started')
 
+            iteration = 0
             while self.mqtt_connected:
                 try:
+                    iteration += 1
                     current_time = time.time()
                     if current_time - self.cookie_last_refresh > self.cookie_refresh_interval:
                         await self.refresh_unraid_session()
 
                     from parsers.graphql_ups import ups_graphql
 
-                    await ups_graphql(self, create_config=True)
+                    # Only send discovery config on first iteration
+                    create_config = (iteration == 1)
+                    await ups_graphql(self, create_config=create_config)
 
                 except Exception:
                     self.logger.exception("Failed to fetch GraphQL UPS info")
@@ -570,7 +593,9 @@ class UnRAIDServer(object):
 
                     from parsers.graphql_system import system_metrics_graphql
 
-                    await system_metrics_graphql(self, create_config=True)
+                    # Only send discovery config on first iteration
+                    create_config = (iteration == 1)
+                    await system_metrics_graphql(self, create_config=create_config)
 
                 except Exception:
                     self.logger.exception("Failed to fetch system metrics")
