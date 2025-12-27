@@ -188,7 +188,7 @@ class UnRAIDServer(object):
             return
 
         # Check actual connection state
-        actual_connected = self.mqtt_is_connected()
+        actual_connected = self.mqtt_is_connected(sync_state=False)
         if not actual_connected:
             self.logger.error(f'MQTT PUBLISH BLOCKED - CONNECTION DEAD: {payload.get("name")} (mqtt_connected={self.mqtt_connected}, actual={actual_connected})')
             return
@@ -232,19 +232,15 @@ class UnRAIDServer(object):
                 result = self.mqtt_client.publish(config_topic, json.dumps(create_config), retain=True)
                 if result is not None and hasattr(result, 'rc') and result.rc != 0:
                     self.logger.error(f'MQTT config publish failed for {sensor_id}: rc={result.rc}, topic={config_topic}')
-                    self.mqtt_connected = False
-                    self.schedule_mqtt_reconnect('config publish failure')
                     return
             except Exception as e:
                 self.logger.exception(f'MQTT publish exception during discovery config for {sensor_id}: {e}')
-                self.mqtt_connected = False
-                self.schedule_mqtt_reconnect('config publish exception')
                 return
 
         if state_value is not None:
             topic = f'{self.base_topic}/{unraid_id}/{sensor_id}/state'
             try:
-                if not self.mqtt_is_connected():
+                if not self.mqtt_is_connected(sync_state=False):
                     self.logger.warning(f'MQTT publish skipped (not connected): {topic}')
                     return
                 result = self.mqtt_client.publish(topic, state_value, retain=retain)
@@ -254,8 +250,6 @@ class UnRAIDServer(object):
                     self.logger.info(f'MQTT STATE PUBLISHED OK: {topic} = {state_value}')
             except Exception:
                 self.logger.exception(f'MQTT publish exception for state: {topic}')
-                self.mqtt_connected = False
-                self.schedule_mqtt_reconnect('publish failure')
                 return
 
         if json_attributes:
@@ -264,13 +258,9 @@ class UnRAIDServer(object):
                 result = self.mqtt_client.publish(attr_topic, json.dumps(json_attributes), retain=retain)
                 if result is not None and hasattr(result, 'rc') and result.rc != 0:
                     self.logger.error(f'MQTT attributes publish failed for {sensor_id}: rc={result.rc}')
-                    self.mqtt_connected = False
-                    self.schedule_mqtt_reconnect('attributes publish failure')
                     return
             except Exception as e:
                 self.logger.exception(f'MQTT publish exception for attributes {sensor_id}: {e}')
-                self.mqtt_connected = False
-                self.schedule_mqtt_reconnect('attributes publish exception')
                 return
 
         if sensor_type == 'button':
@@ -281,7 +271,7 @@ class UnRAIDServer(object):
             self.logger.info(f'Scheduling MQTT reconnection ({reason})...')
             self.reconnect_task = asyncio.ensure_future(self.mqtt_reconnect())
 
-    def mqtt_is_connected(self):
+    def mqtt_is_connected(self, sync_state=True):
         is_connected = getattr(self.mqtt_client, 'is_connected', None)
         if isinstance(is_connected, bool):
             actual_state = is_connected
@@ -291,7 +281,7 @@ class UnRAIDServer(object):
             actual_state = self.mqtt_connected
 
         # Log state mismatch
-        if actual_state != self.mqtt_connected:
+        if sync_state and actual_state != self.mqtt_connected:
             self.logger.warning(f'MQTT state mismatch: mqtt_connected={self.mqtt_connected}, actual={actual_state}')
             self.mqtt_connected = actual_state
 
