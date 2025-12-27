@@ -64,7 +64,9 @@ class UnRAIDServer(object):
 
         unraid_id = normalize_str(self.unraid_name)
         will_message = Message(f'{self.base_topic}/{unraid_id}/connectivity/state', 'OFF', retain=True)
-        self.mqtt_client = MQTTClient(self.unraid_name, will_message=will_message)
+        # Use normalized ID for MQTT client (no spaces, MQTT spec compliant)
+        mqtt_client_id = f'unraid_monitor_{unraid_id}'
+        self.mqtt_client = MQTTClient(mqtt_client_id, will_message=will_message)
         asyncio.ensure_future(self.mqtt_connect(mqtt_config))
 
         self.logger = logging.getLogger(self.unraid_name)
@@ -77,7 +79,7 @@ class UnRAIDServer(object):
         self.loop = loop
 
     def on_connect(self, client, flags, rc, properties):
-        self.logger.info('Successfully connected to mqtt server')
+        self.logger.info(f'MQTT on_connect callback: rc={rc}, flags={flags}, client_id={client._client_id}')
         self.mqtt_connected = True
         self.watchdog_failures = 0
         mover_payload = {'name': 'Mover'}
@@ -236,13 +238,16 @@ class UnRAIDServer(object):
         if state_value is not None:
             topic = f'{self.base_topic}/{unraid_id}/{sensor_id}/state'
             try:
+                if not self.mqtt_is_connected():
+                    self.logger.warning(f'MQTT publish skipped (not connected): {topic}')
+                    return
                 result = self.mqtt_client.publish(topic, state_value, retain=retain)
                 if result is not None and hasattr(result, 'rc') and result.rc != 0:
-                    self.logger.warning(f'MQTT publish failed for {sensor_id}: rc={result.rc}')
+                    self.logger.warning(f'MQTT publish failed for {sensor_id}: rc={result.rc}, topic={topic}')
                 else:
                     self.logger.debug(f'MQTT published: {topic} = {state_value}')
             except Exception:
-                self.logger.exception('MQTT publish failed for state')
+                self.logger.exception(f'MQTT publish exception for state: {topic}')
                 self.mqtt_connected = False
                 self.schedule_mqtt_reconnect('publish failure')
                 return
@@ -273,10 +278,18 @@ class UnRAIDServer(object):
     def mqtt_is_connected(self):
         is_connected = getattr(self.mqtt_client, 'is_connected', None)
         if isinstance(is_connected, bool):
-            return is_connected
-        if callable(is_connected):
-            return is_connected()
-        return self.mqtt_connected
+            actual_state = is_connected
+        elif callable(is_connected):
+            actual_state = is_connected()
+        else:
+            actual_state = self.mqtt_connected
+
+        # Log state mismatch
+        if actual_state != self.mqtt_connected:
+            self.logger.warning(f'MQTT state mismatch: mqtt_connected={self.mqtt_connected}, actual={actual_state}')
+            self.mqtt_connected = actual_state
+
+        return actual_state
 
     async def mqtt_watchdog_loop(self):
         try:
@@ -607,14 +620,15 @@ class UnRAIDServer(object):
 
         while True:
             try:
-                self.logger.info('Connecting to mqtt server...')
+                self.logger.info(f'Connecting to MQTT broker {mqtt_host}:{mqtt_port} with client_id={self.mqtt_client._client_id}')
                 await self.mqtt_client.connect(mqtt_host, mqtt_port)
+                self.logger.info('MQTT connection successful')
                 break
             except ConnectionRefusedError:
-                self.logger.error('Connection refused...')
+                self.logger.error(f'MQTT connection refused by {mqtt_host}:{mqtt_port}')
                 await asyncio.sleep(30)
             except Exception:
-                self.logger.exception('Exception connecting to mqtt...')
+                self.logger.exception(f'Exception connecting to MQTT broker {mqtt_host}:{mqtt_port}')
                 await asyncio.sleep(30)
 
     async def ws_connect(self):
