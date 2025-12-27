@@ -31,7 +31,15 @@ async def system_metrics_graphql(server, create_config=True):
         websocket_url = f'{server.unraid_ws}/sub/update1,temperature'
 
         try:
-            async with websockets.connect(websocket_url, subprotocols=subprotocols, extra_headers=headers, close_timeout=2) as ws:
+            async with websockets.connect(
+                websocket_url,
+                subprotocols=subprotocols,
+                extra_headers=headers,
+                close_timeout=2,
+                open_timeout=5,
+                ping_interval=20,
+                ping_timeout=10
+            ) as ws:
                 # Wait for both messages with reduced timeout
                 timeout_time = asyncio.get_event_loop().time() + 5
                 messages_received = 0

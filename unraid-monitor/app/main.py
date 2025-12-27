@@ -370,7 +370,7 @@ class UnRAIDServer(object):
                 'username': self.unraid_username,
                 'password': self.unraid_password
             }
-            async with httpx.AsyncClient() as http:
+            async with httpx.AsyncClient(verify=False) as http:
                 r = await http.post(f'{self.unraid_url}/login', data=payload, timeout=15)
                 self.unraid_cookie = r.headers.get('set-cookie')
                 self.cookie_last_refresh = time.time()
@@ -544,7 +544,13 @@ class UnRAIDServer(object):
 
                     # Only send discovery config on first iteration
                     create_config = (iteration == 1)
-                    await ups_graphql(self, create_config=create_config)
+                    try:
+                        await asyncio.wait_for(
+                            ups_graphql(self, create_config=create_config),
+                            timeout=15
+                        )
+                    except asyncio.TimeoutError:
+                        self.logger.warning("GraphQL UPS fetch timed out; will retry")
 
                 except Exception:
                     self.logger.exception("Failed to fetch GraphQL UPS info")
@@ -576,7 +582,13 @@ class UnRAIDServer(object):
 
                     # Only send discovery config on first iteration
                     create_config = (iteration == 1)
-                    await system_metrics_graphql(self, create_config=create_config)
+                    try:
+                        await asyncio.wait_for(
+                            system_metrics_graphql(self, create_config=create_config),
+                            timeout=15
+                        )
+                    except asyncio.TimeoutError:
+                        self.logger.warning("GraphQL system metrics fetch timed out; will retry")
 
                 except Exception:
                     self.logger.exception("Failed to fetch system metrics")
@@ -654,7 +666,7 @@ class UnRAIDServer(object):
                         'password': self.unraid_password
                     }
 
-                    async with httpx.AsyncClient() as http:
+                    async with httpx.AsyncClient(verify=False) as http:
                         r = await http.post(f'{self.unraid_url}/login', data=payload, timeout=120)
                         self.unraid_cookie = r.headers.get('set-cookie')
                         r = await http.get(f'{self.unraid_url}/Dashboard', follow_redirects=True, timeout=120)

@@ -22,7 +22,15 @@ async def ups_graphql(server, create_config=True):
         websocket_url = f'{server.unraid_ws}/sub/apcups'
 
         # Open connection, grab the cached current state, then close
-        async with websockets.connect(websocket_url, subprotocols=subprotocols, extra_headers=headers, close_timeout=2) as ws:
+        async with websockets.connect(
+            websocket_url,
+            subprotocols=subprotocols,
+            extra_headers=headers,
+            close_timeout=2,
+            open_timeout=5,
+            ping_interval=20,
+            ping_timeout=10
+        ) as ws:
             try:
                 # nchan sends last message immediately on subscribe
                 data = await asyncio.wait_for(ws.recv(), timeout=3)
