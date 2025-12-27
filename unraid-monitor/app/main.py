@@ -187,12 +187,6 @@ class UnRAIDServer(object):
             self.logger.error(f'MQTT PUBLISH BLOCKED - NOT CONNECTED: {payload.get("name")}')
             return
 
-        # Check actual connection state
-        actual_connected = self.mqtt_is_connected(sync_state=False)
-        if not actual_connected:
-            self.logger.error(f'MQTT PUBLISH BLOCKED - CONNECTION DEAD: {payload.get("name")} (mqtt_connected={self.mqtt_connected}, actual={actual_connected})')
-            return
-
         unraid_id = normalize_str(self.unraid_name)
         sensor_id = normalize_str(payload["name"])
         unraid_sensor_id = f'{unraid_id}_{sensor_id}'
@@ -240,9 +234,6 @@ class UnRAIDServer(object):
         if state_value is not None:
             topic = f'{self.base_topic}/{unraid_id}/{sensor_id}/state'
             try:
-                if not self.mqtt_is_connected(sync_state=False):
-                    self.logger.warning(f'MQTT publish skipped (not connected): {topic}')
-                    return
                 result = self.mqtt_client.publish(topic, state_value, retain=retain)
                 if result is not None and hasattr(result, 'rc') and result.rc != 0:
                     self.logger.error(f'MQTT STATE PUBLISH FAILED: {sensor_id}, rc={result.rc}, topic={topic}')

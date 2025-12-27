@@ -76,12 +76,17 @@ async def apcups(self, msg_data, create_config):
             # "30 minutes" -> 30
             timeleft_min = _to_int(_strip_html(str(time_raw)))
             nompower_w   = _to_int(_strip_html(str(nompwr_raw)))     # e.g. "900 W"
-            # "180 W (20 %)" -> 20
-            load_w = _to_int(_strip_html(str(load_raw)))
-            load_pct = 0
-            m = re.search(r"\((\s*\d+)\s*%\)", _strip_html(str(load_raw)))
+            # "180 W (20 %)" -> 180, 20
+            load_text = _strip_html(str(load_raw))
+            load_w = _to_int(load_text)
+            load_pct = None
+            m = re.search(r"(\d+(?:\.\d+)?)\s*%", load_text)
             if m:
-                load_pct = int(m.group(1))
+                load_pct = float(m.group(1))
+            elif nompower_w:
+                load_pct = round((load_w / nompower_w) * 100, 1)
+            if load_pct is None:
+                load_pct = 0
 
             data_dict = {
                 "MODEL": model,
