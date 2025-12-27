@@ -222,7 +222,7 @@ class UnRAIDServer(object):
             try:
                 config_topic = f'homeassistant/{sensor_type}/{unraid_sensor_id}/config'
                 result = self.mqtt_client.publish(config_topic, json.dumps(create_config), retain=True)
-                if hasattr(result, 'rc') and result.rc != 0:
+                if result is not None and hasattr(result, 'rc') and result.rc != 0:
                     self.logger.error(f'MQTT config publish failed for {sensor_id}: rc={result.rc}, topic={config_topic}')
                     self.mqtt_connected = False
                     self.schedule_mqtt_reconnect('config publish failure')
@@ -237,7 +237,7 @@ class UnRAIDServer(object):
             topic = f'{self.base_topic}/{unraid_id}/{sensor_id}/state'
             try:
                 result = self.mqtt_client.publish(topic, state_value, retain=retain)
-                if result.rc != 0:
+                if result is not None and hasattr(result, 'rc') and result.rc != 0:
                     self.logger.warning(f'MQTT publish failed for {sensor_id}: rc={result.rc}')
                 else:
                     self.logger.debug(f'MQTT published: {topic} = {state_value}')
@@ -251,7 +251,7 @@ class UnRAIDServer(object):
             try:
                 attr_topic = f'{self.base_topic}/{unraid_id}/{sensor_id}/attributes'
                 result = self.mqtt_client.publish(attr_topic, json.dumps(json_attributes), retain=retain)
-                if hasattr(result, 'rc') and result.rc != 0:
+                if result is not None and hasattr(result, 'rc') and result.rc != 0:
                     self.logger.error(f'MQTT attributes publish failed for {sensor_id}: rc={result.rc}')
                     self.mqtt_connected = False
                     self.schedule_mqtt_reconnect('attributes publish failure')
