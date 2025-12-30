@@ -4,7 +4,7 @@
   "slug": "unraid-monitor",
   "description": "Monitor Unraid servers via MQTT with GraphQL support",
   "url": "https://github.com/B0st0wn/Unraid-Monitor",
-  "image": "extras/logo.png",
+  "logo": true,
   "arch": ["amd64", "aarch64", "armv7"],
   "startup": "application",
   "boot": "auto",
