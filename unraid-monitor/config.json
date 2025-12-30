@@ -1,0 +1,63 @@
+{
+  "name": "Unraid Monitor",
+  "version": "2.3.2",
+  "slug": "unraid-monitor",
+  "description": "Monitor Unraid servers via MQTT with GraphQL support",
+  "url": "https://github.com/B0st0wn/Unraid-Monitor",
+  "image": "extras/logo.png",
+  "arch": ["amd64", "aarch64", "armv7"],
+  "startup": "application",
+  "boot": "auto",
+  "init": false,
+  "options": {
+    "unraid_servers": [
+      {
+        "name": "My Unraid Server",
+        "host": "192.168.1.100",
+        "port": 443,
+        "ssl": true,
+        "username": "root",
+        "password": "",
+        "api_key": "",
+        "scan_interval": 5,
+        "ups_scan_interval": 5,
+        "system_scan_interval": 5
+      }
+    ],
+    "mqtt": {
+      "auto_discover": true,
+      "host": "core-mosquitto",
+      "port": 1883,
+      "username": "",
+      "password": "",
+      "base_topic": "unraid"
+    },
+    "use_graphql": true
+  },
+  "schema": {
+    "unraid_servers": [
+      {
+        "name": "str",
+        "host": "str",
+        "port": "port",
+        "ssl": "bool",
+        "username": "str",
+        "password": "password",
+        "api_key": "str?",
+        "scan_interval": "int(5,3600)?",
+        "ups_scan_interval": "int(5,3600)?",
+        "system_scan_interval": "int(5,3600)?"
+      }
+    ],
+    "mqtt": {
+      "auto_discover": "bool",
+      "host": "str?",
+      "port": "port?",
+      "username": "str?",
+      "password": "password?",
+      "base_topic": "str?"
+    },
+    "use_graphql": "bool?"
+  },
+  "services": ["mqtt:want"]
+}

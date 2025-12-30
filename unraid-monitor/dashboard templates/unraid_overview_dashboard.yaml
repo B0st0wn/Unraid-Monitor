@@ -1,0 +1,133 @@
+title: Unraid Overview
+views:
+  - title: Unraid Overview
+    path: unraid-overview
+    icon: mdi:server-network
+    type: sections
+    badges: []
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: NAS
+            icon: mdi:nas
+          - type: markdown
+            title: NAS Health
+            content: |-
+              ## NAS
+              <ha-icon icon="mdi:clock-outline"></ha-icon> **Uptime**  
+              {{ state_attr('sensor.nas_system_uptime', 'formatted') or states('sensor.nas_system_uptime') }}
+
+              <ha-icon icon="mdi:server"></ha-icon> **Array**  
+              {{ states('sensor.nas_array') }}
+
+              <ha-icon icon="mdi:chart-donut"></ha-icon> **Log Usage**  
+              {{ states('sensor.nas_log_usage') }} %
+
+              <ha-icon icon="mdi:arrange-bring-to-front"></ha-icon> **Cache**  
+              Size: {{ states('sensor.nas_disk_cache_size') }} TB  
+              Used: {{ states('sensor.nas_disk_cache_used') }} TB • Free: {{ states('sensor.nas_disk_cache_free') }} TB
+
+              {% for disk in [1,2,3,4] %}
+              <ha-icon icon="mdi:harddisk"></ha-icon> **Disk {{ disk }}**  
+              Size: {{ states('sensor.nas_disk_' ~ disk ~ '_size') }} TB  
+              Used: {{ states('sensor.nas_disk_' ~ disk ~ '_used') }} TB • Free: {{ states('sensor.nas_disk_' ~ disk ~ '_free') }} TB
+
+              {% endfor %}
+      - type: grid
+        cards:
+          - type: heading
+            heading: UPS
+            icon: mdi:power-plug
+          - type: grid
+            title: UPS Overview
+            columns: 3
+            square: false
+            cards:
+              - type: tile
+                entity: sensor.nas_ups_status
+                name: UPS Status
+                icon: mdi:power-plug
+                vertical: false
+                features_position: bottom
+              - type: tile
+                entity: sensor.nas_ups_load
+                name: UPS Load %
+                icon: mdi:chart-line
+                color: blue
+                vertical: false
+                features:
+                  - type: trend-graph
+                features_position: bottom
+              - type: tile
+                entity: sensor.nas_ups_load_power
+                name: UPS Load Watts
+                icon: mdi:flash
+                color: amber
+                vertical: false
+                features:
+                  - type: trend-graph
+                features_position: bottom
+              - type: tile
+                entity: sensor.nas_ups_battery
+                name: Battery
+                icon: mdi:battery-high
+                color: green
+                vertical: false
+                features:
+                  - type: trend-graph
+                features_position: bottom
+              - type: tile
+                entity: sensor.nas_ups_time_left
+                name: Runtime Left
+                icon: mdi:timer-outline
+              - type: tile
+                entity: sensor.nas_ups_nominal_power
+                name: Nominal Power
+                icon: mdi:flash-outline
+          - type: horizontal-stack
+            cards:
+              - type: gauge
+                name: UPS Load %
+                entity: sensor.nas_ups_load
+                min: 0
+                max: 100
+                needle: true
+                severity:
+                  green: 0
+                  yellow: 60
+                  red: 85
+              - type: gauge
+                name: UPS Load Watts
+                entity: sensor.nas_ups_load_power
+                min: 0
+                max: 900
+                needle: true
+                severity:
+                  green: 0
+                  yellow: 550
+                  red: 750
+          - type: statistics-graph
+            title: UPS Load History
+            entities:
+              - entity: sensor.nas_ups_load
+                name: Load %
+              - entity: sensor.nas_ups_load_power
+                name: Load W
+            chart_type: line
+            stat_types:
+              - mean
+              - max
+            period: hour
+            days_to_show: 1
+            hide_legend: false
+          - type: conditional
+            conditions:
+              - entity: sensor.nas_ups_load
+                condition: numeric_state
+                above: 85
+            card:
+              type: markdown
+              content: |-
+                ⚠️ **UPS Load Critical**  
+                Load exceeded 85%. Consider powering down unused equipment.

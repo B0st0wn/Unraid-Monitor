@@ -1,0 +1,37 @@
+title: Unraid Power Compact
+views:
+  - title: UPS
+    path: unraid-power-compact
+    icon: mdi:power-plug
+    type: sections
+    badges: []
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: UPS
+            icon: mdi:power-plug
+          - type: markdown
+            title: UPS Summary
+            content: |-
+              ## Power
+              <ha-icon icon="mdi:power-plug"></ha-icon> **Status**  
+              {{ states('sensor.nas_ups_status') }}
+
+              <ha-icon icon="mdi:chart-line"></ha-icon> **Load**  
+              {{ states('sensor.nas_ups_load') }} % ({{ states('sensor.nas_ups_load_power') }} W)
+
+              <ha-icon icon="mdi:battery-high"></ha-icon> **Battery**  
+              {{ states('sensor.nas_ups_battery') }} %
+
+              <ha-icon icon="mdi:timer-outline"></ha-icon> **Runtime Left**  
+              {{ states('sensor.nas_ups_time_left') }}
+
+              <ha-icon icon="mdi:flash-outline"></ha-icon> **Nominal Power**  
+              {{ states('sensor.nas_ups_nominal_power') }} W
+
+              <ha-icon icon="mdi:current-ac"></ha-icon> **Line Voltage**  
+              {{ states('sensor.nas_ups_line_voltage') }} V
+
+              <ha-icon icon="mdi:current-dc"></ha-icon> **Output Voltage**  
+              {{ states('sensor.nas_ups_output_voltage') }} V

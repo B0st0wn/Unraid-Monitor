@@ -1,0 +1,36 @@
+title: Unraid NAS Stats
+views:
+  - title: NAS
+    path: unraid-nas
+    icon: mdi:nas
+    type: sections
+    badges: []
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: NAS
+            icon: mdi:nas
+          - type: markdown
+            title: NAS
+            content: |-
+              ## NAS
+              <ha-icon icon="mdi:clock-outline"></ha-icon> **Uptime**  
+              {{ state_attr('sensor.nas_system_uptime', 'formatted') or states('sensor.nas_system_uptime') }}
+
+              <ha-icon icon="mdi:server"></ha-icon> **Array**  
+              {{ states('sensor.nas_array') }}
+
+              <ha-icon icon="mdi:chart-donut"></ha-icon> **Log Usage**  
+              {{ states('sensor.nas_log_usage') }} %
+
+              <ha-icon icon="mdi:arrange-bring-to-front"></ha-icon> **Cache**  
+              Size: {{ states('sensor.nas_disk_cache_size') }} TB  
+              Used: {{ states('sensor.nas_disk_cache_used') }} TB • Free: {{ states('sensor.nas_disk_cache_free') }} TB
+
+              {% for disk in [1,2,3,4] %}
+              <ha-icon icon="mdi:harddisk"></ha-icon> **Disk {{ disk }}**  
+              Size: {{ states('sensor.nas_disk_' ~ disk ~ '_size') }} TB  
+              Used: {{ states('sensor.nas_disk_' ~ disk ~ '_used') }} TB • Free: {{ states('sensor.nas_disk_' ~ disk ~ '_free') }} TB
+
+              {% endfor %}
