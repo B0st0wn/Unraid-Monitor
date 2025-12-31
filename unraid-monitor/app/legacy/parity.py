@@ -82,23 +82,22 @@ class ParityChannel(LegacyChannel):
             'sync_errors_corrected': errors_val,
         }
 
-        # Binary sensor: Parity Check Active
-        # Set to OFF when check completes or is near completion
+        # Status sensor: Parity Check Status
+        # Shows "Running" during check, "Complete" when finished
         is_running = pct_value > 0 and pct_value < 99.9
+        status_text = "Running" if is_running else "Complete"
 
         updates.append(
             EntityUpdate(
-                sensor_type='binary_sensor',
+                sensor_type='sensor',
                 payload={
-                    'name': 'Parity Check Active',
-                    'device_class': 'running',
-                    'icon': 'mdi:shield-sync',
+                    'name': 'Parity Check Status',
+                    'icon': 'mdi:shield-sync' if is_running else 'mdi:shield-check',
                 },
-                state='ON' if is_running else 'OFF',
+                state=status_text,
                 attributes={'percentage': pct_value},
-                retain=True,  # Persist last state instead of becoming unavailable
-                expire_after=3600,  # 1 hour - long enough to not expire during checks
-                unique_id_suffix='parity_check_active',
+                retain=True,  # Persist last state forever
+                unique_id_suffix='parity_check_status',
             )
         )
 
@@ -117,8 +116,7 @@ class ParityChannel(LegacyChannel):
                 },
                 state=final_pct,
                 attributes=attributes,
-                retain=True,  # Persist last state instead of becoming unavailable
-                expire_after=3600,  # 1 hour - long enough to not expire during checks
+                retain=True,  # Persist last state forever
                 unique_id_suffix='parity_check',
             )
         )
