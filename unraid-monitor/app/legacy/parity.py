@@ -83,6 +83,9 @@ class ParityChannel(LegacyChannel):
         }
 
         # Binary sensor: Parity Check Active
+        # Set to OFF when check completes or is near completion
+        is_running = pct_value > 0 and pct_value < 99.9
+
         updates.append(
             EntityUpdate(
                 sensor_type='binary_sensor',
@@ -91,15 +94,18 @@ class ParityChannel(LegacyChannel):
                     'device_class': 'running',
                     'icon': 'mdi:shield-sync',
                 },
-                state='ON' if pct_value < 100 else 'OFF',
+                state='ON' if is_running else 'OFF',
                 attributes={'percentage': pct_value},
-                retain=False,
-                expire_after=max(self.interval * 2, 60),
+                retain=True,  # Persist last state instead of becoming unavailable
+                expire_after=3600,  # 1 hour - long enough to not expire during checks
                 unique_id_suffix='parity_check_active',
             )
         )
 
         # Percentage sensor: Parity Check
+        # When check completes or is cancelled, show final percentage (or 100 if complete)
+        final_pct = pct_value if pct_value < 99.9 else 100.0
+
         updates.append(
             EntityUpdate(
                 sensor_type='sensor',
@@ -109,10 +115,10 @@ class ParityChannel(LegacyChannel):
                     'icon': 'mdi:database-eye',
                     'state_class': 'measurement',
                 },
-                state=pct_value,
+                state=final_pct,
                 attributes=attributes,
-                retain=False,
-                expire_after=max(self.interval * 2, 60),
+                retain=True,  # Persist last state instead of becoming unavailable
+                expire_after=3600,  # 1 hour - long enough to not expire during checks
                 unique_id_suffix='parity_check',
             )
         )
