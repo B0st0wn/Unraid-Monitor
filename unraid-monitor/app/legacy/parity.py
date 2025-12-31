@@ -14,6 +14,8 @@ class ParityChannel(LegacyChannel):
     def __init__(self, logger, interval: int):
         self.logger = logger
         self.interval = int(interval)
+        self._check_active = False
+        self._last_percentage = 0.0
 
     async def parse(self, msg_data: str) -> List[EntityUpdate]:
         """
@@ -59,6 +61,18 @@ class ParityChannel(LegacyChannel):
         total_size_bytes = _parse_size_safe(total_text)
         estimated_speed_bytes = _parse_size_safe(speed_text)
 
+        # Detect check start
+        if not self._check_active and pct_value > 0:
+            self._check_active = True
+            self.logger.info(f"Parity check started (0% → {pct_value}%)")
+
+        # Detect check completion (close to or at 100%)
+        if self._check_active and pct_value >= 99.9:
+            self.logger.info(f"Parity check completed at {pct_value}% with {errors_val} errors corrected")
+            # Don't set _check_active = False here - let sensor expiration handle it
+
+        self._last_percentage = pct_value
+
         attributes: Dict[str, Any] = {
             'total_size': total_size_bytes,
             'elapsed_time': elapsed_text,
@@ -68,6 +82,24 @@ class ParityChannel(LegacyChannel):
             'sync_errors_corrected': errors_val,
         }
 
+        # Binary sensor: Parity Check Active
+        updates.append(
+            EntityUpdate(
+                sensor_type='binary_sensor',
+                payload={
+                    'name': 'Parity Check Active',
+                    'device_class': 'running',
+                    'icon': 'mdi:shield-sync',
+                },
+                state='ON' if pct_value < 100 else 'OFF',
+                attributes={'percentage': pct_value},
+                retain=False,
+                expire_after=max(self.interval * 2, 60),
+                unique_id_suffix='parity_check_active',
+            )
+        )
+
+        # Percentage sensor: Parity Check
         updates.append(
             EntityUpdate(
                 sensor_type='sensor',
