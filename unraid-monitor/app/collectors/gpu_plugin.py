@@ -1,4 +1,3 @@
-import re
 import json
 from lxml import etree
 from app.utils import normalize_keys_lower
@@ -219,6 +218,49 @@ class GpuPluginCollector(QueryCollector):
 
         return updates
 
+    def _extract_balanced_json(self, text: str, start_marker: str) -> Optional[str]:
+        """
+        Extract a balanced JSON object from text starting after the marker.
+        Handles nested braces correctly.
+        """
+        idx = text.find(start_marker)
+        if idx == -1:
+            return None
+
+        # Find the opening brace after the marker
+        brace_start = text.find('{', idx + len(start_marker))
+        if brace_start == -1:
+            return None
+
+        depth = 0
+        in_string = False
+        escape_next = False
+
+        for i, char in enumerate(text[brace_start:], start=brace_start):
+            if escape_next:
+                escape_next = False
+                continue
+
+            if char == '\\' and in_string:
+                escape_next = True
+                continue
+
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+
+            if in_string:
+                continue
+
+            if char == '{':
+                depth += 1
+            elif char == '}':
+                depth -= 1
+                if depth == 0:
+                    return text[brace_start:i + 1]
+
+        return None
+
     async def _discover_gpus(self) -> None:
         """
         Fetch /Dashboard and parse gpustat_statusm(...) to discover GPUs.
@@ -235,19 +277,28 @@ class GpuPluginCollector(QueryCollector):
             tree = etree.HTML(r.text)
             script_nodes = tree.xpath('.//script[contains(text(), "gpustat_statusm")]')
             if not script_nodes:
+                self.logger.debug('GPU plugin: no gpustat_statusm script found on Dashboard (GPU Stats plugin may not be installed)')
                 return
 
             script_text = script_nodes[0].text or ''
-            m = re.search(r'gpustat_statusm\((\{.+?\})\)', script_text, re.DOTALL)
-            if not m:
-                self.logger.info('GPU plugin discovery: unable to match gpustat_statusm JSON')
+
+            # Use balanced brace extraction instead of regex to handle nested JSON
+            gpus_json = self._extract_balanced_json(script_text, 'gpustat_statusm(')
+            if not gpus_json:
+                self.logger.warning('GPU plugin discovery: unable to extract gpustat_statusm JSON from Dashboard')
                 return
 
-            gpus_json = m.group(1)
-            gpus_obj = json.loads(gpus_json)
+            try:
+                gpus_obj = json.loads(gpus_json)
+            except json.JSONDecodeError as e:
+                self.logger.warning(f'GPU plugin discovery: invalid JSON in gpustat_statusm: {e}')
+                return
+
             if isinstance(gpus_obj, dict) and gpus_obj:
                 self.gpus = gpus_obj
-                self.logger.info('GPU plugin: GPUs discovered')
+                self.logger.info(f'GPU plugin: discovered {len(gpus_obj)} GPU(s): {list(gpus_obj.keys())}')
+            else:
+                self.logger.debug('GPU plugin: gpustat_statusm returned empty or non-dict data')
         except Exception as e:
             self.logger.error(f'GPU discovery error: {e}')
 
