@@ -33,7 +33,7 @@ class GpuPluginCollector(QueryCollector):
         Returns plugin JSON data as a dict keyed by gpu_id.
         """
         if not self.legacy_ctx:
-            self.logger.info('GPU plugin: legacy context missing; skipping')
+            self.logger.warning('GPU plugin: legacy context missing (no username/password configured); skipping')
             return {}
 
         if self.gpus is None:
@@ -42,6 +42,7 @@ class GpuPluginCollector(QueryCollector):
                 return {}
 
         try:
+            self.logger.debug(f'GPU plugin: fetching stats for GPUs: {json.dumps(self.gpus)}')
             r = await self.legacy_ctx.http_get(
                 '/plugins/gpustat/gpustatusmulti.php',
                 params={'gpus': json.dumps(self.gpus)},
@@ -50,7 +51,23 @@ class GpuPluginCollector(QueryCollector):
             if r.status_code != 200:
                 self.logger.warning(f'GPU plugin fetch failed: HTTP {r.status_code}')
                 return {}
-            return r.json()
+
+            # Log raw response for debugging
+            raw_text = r.text
+            self.logger.debug(f'GPU plugin: raw response ({len(raw_text)} chars): {raw_text[:500]}')
+
+            try:
+                data = r.json()
+            except Exception as je:
+                self.logger.warning(f'GPU plugin: failed to parse JSON response: {je}')
+                return {}
+
+            if not data:
+                self.logger.debug('GPU plugin: empty response from gpustatusmulti.php')
+                return {}
+
+            self.logger.debug(f'GPU plugin: received data for {len(data)} GPU(s): {list(data.keys())}')
+            return data
         except Exception as e:
             self.logger.error(f'GPU plugin fetch error: {e}')
             return {}
@@ -61,25 +78,41 @@ class GpuPluginCollector(QueryCollector):
             return updates
 
         def is_valid(value: Any) -> bool:
-            invalid = {'N/A', 'N\\/A', 'Unknown', 'unknown', '', None}
-            if str(value).strip() in invalid:
+            if value is None:
+                return False
+            str_val = str(value).strip()
+            invalid = {'N/A', 'N\\/A', 'Unknown', 'unknown', ''}
+            if str_val in invalid:
                 return False
             try:
-                cleaned = str(value)
-                for suffix in ['%', '°C', 'W']:
+                cleaned = str_val
+                for suffix in ['%', '°C', 'W', ' ']:
                     cleaned = cleaned.replace(suffix, '')
                 float(cleaned.strip())
                 return True
             except Exception:
                 return False
 
+        def get_field(d: dict, *keys: str) -> Any:
+            """Get first matching field from multiple possible key names."""
+            for key in keys:
+                if key in d and d[key] is not None:
+                    return d[key]
+            return None
+
         for gpu_id, gpu_data in data.items():
             if not isinstance(gpu_data, dict):
+                self.logger.debug(f'GPU plugin: skipping {gpu_id}, not a dict: {type(gpu_data)}')
                 continue
 
-            name = str(gpu_data.get('name') or f'GPU {gpu_id}')
+            # Try multiple field names for GPU name/model
+            name = get_field(gpu_data, 'name', 'model', 'productname') or f'GPU {gpu_id}'
+            name = str(name)
 
-            util = gpu_data.get('util')
+            self.logger.debug(f'GPU plugin: parsing {gpu_id} ({name}): {list(gpu_data.keys())}')
+
+            # Try multiple field names for utilization
+            util = get_field(gpu_data, 'util', 'gpuutil', 'utilization', 'load')
             if is_valid(util):
                 try:
                     load_pct = int(float(str(util).replace('%', '').strip()))
@@ -274,31 +307,54 @@ class GpuPluginCollector(QueryCollector):
                 self.logger.warning(f'GPU discovery failed: HTTP {r.status_code}')
                 return
 
-            tree = etree.HTML(r.text)
-            script_nodes = tree.xpath('.//script[contains(text(), "gpustat_statusm")]')
-            if not script_nodes:
-                self.logger.debug('GPU plugin: no gpustat_statusm script found on Dashboard (GPU Stats plugin may not be installed)')
+            html_text = r.text
+            self.logger.debug(f'GPU plugin: Dashboard response length: {len(html_text)} chars')
+
+            # First try to find gpustat_statusm in the raw HTML (faster than xpath)
+            if 'gpustat_statusm' not in html_text:
+                self.logger.info('GPU plugin: gpustat_statusm not found on Dashboard (GPU Stats plugin may not be installed)')
                 return
 
-            script_text = script_nodes[0].text or ''
+            # Try to extract directly from HTML text first
+            gpus_json = self._extract_balanced_json(html_text, 'gpustat_statusm(')
 
-            # Use balanced brace extraction instead of regex to handle nested JSON
-            gpus_json = self._extract_balanced_json(script_text, 'gpustat_statusm(')
+            # If that fails, try parsing with lxml
             if not gpus_json:
-                self.logger.warning('GPU plugin discovery: unable to extract gpustat_statusm JSON from Dashboard')
+                self.logger.debug('GPU plugin: trying xpath extraction')
+                tree = etree.HTML(html_text)
+                script_nodes = tree.xpath('.//script')
+
+                for node in script_nodes:
+                    script_text = node.text or ''
+                    if 'gpustat_statusm' in script_text:
+                        gpus_json = self._extract_balanced_json(script_text, 'gpustat_statusm(')
+                        if gpus_json:
+                            break
+
+            if not gpus_json:
+                self.logger.warning('GPU plugin discovery: found gpustat_statusm but unable to extract JSON')
+                # Log a snippet around gpustat_statusm for debugging
+                idx = html_text.find('gpustat_statusm')
+                if idx != -1:
+                    snippet = html_text[max(0, idx - 20):idx + 200]
+                    self.logger.debug(f'GPU plugin: context around gpustat_statusm: {snippet}')
                 return
 
             try:
                 gpus_obj = json.loads(gpus_json)
             except json.JSONDecodeError as e:
                 self.logger.warning(f'GPU plugin discovery: invalid JSON in gpustat_statusm: {e}')
+                self.logger.debug(f'GPU plugin: JSON that failed to parse: {gpus_json[:500]}')
                 return
 
             if isinstance(gpus_obj, dict) and gpus_obj:
                 self.gpus = gpus_obj
                 self.logger.info(f'GPU plugin: discovered {len(gpus_obj)} GPU(s): {list(gpus_obj.keys())}')
+                # Log the structure of the first GPU for debugging
+                first_key = next(iter(gpus_obj))
+                self.logger.debug(f'GPU plugin: sample GPU config ({first_key}): {gpus_obj[first_key]}')
             else:
-                self.logger.debug('GPU plugin: gpustat_statusm returned empty or non-dict data')
+                self.logger.info('GPU plugin: gpustat_statusm returned empty or non-dict data')
         except Exception as e:
             self.logger.error(f'GPU discovery error: {e}')
 
