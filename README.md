@@ -107,6 +107,8 @@ The add-on creates sensors for:
 - **Docker Containers** - Running state, image, ports, and auto-start status
 - **Virtual Machines** - Running state, vCPU count, and memory allocation
 - **UPS** - Power status, battery level, runtime (if UPS is connected)
+- **GPU** - Load, memory usage, fan speed, power, temperature (via GPU Stats plugin)
+- **Coral TPU** - Temperature, throttle status, device presence (requires setup - see below)
 - **System** - Uptime with formatted display
 
 ## Lovelace Dashboard
@@ -146,6 +148,112 @@ The `packages` folder includes:
 ### Multiple Servers
 
 You can monitor multiple Unraid servers by adding additional entries to the `unraid_servers` list in the configuration.
+
+### Coral TPU Monitoring
+
+Monitor Google Coral Edge TPU accelerators (PCIe/M.2 or USB) installed in your Unraid server. This requires installing a small PHP script on the Unraid server.
+
+#### Supported Devices
+
+| Device Type | Temperature | Throttle Status | Presence |
+|-------------|-------------|-----------------|----------|
+| PCIe/M.2 Coral | Yes | Yes | Yes |
+| USB Coral | No (hardware limitation) | No | Yes |
+
+#### Installation
+
+1. **SSH into your Unraid server**
+
+2. **Create the plugin directory and script:**
+   ```bash
+   mkdir -p /usr/local/emhttp/plugins/coral
+   nano /usr/local/emhttp/plugins/coral/coral_status.php
+   ```
+
+3. **Paste the contents of `extras/coral_status.php`** from this repository
+
+4. **Save and exit** (Ctrl+X, Y, Enter in nano)
+
+5. **Test the endpoint** by visiting in your browser:
+   ```
+   https://YOUR_UNRAID_IP/plugins/coral/coral_status.php
+   ```
+
+   You should see JSON output like:
+   ```json
+   {
+     "pcie": [
+       {
+         "id": "apex_0",
+         "device": "/dev/apex0",
+         "temp": 45000,
+         "temp_c": 45,
+         "throttle_state": "normal"
+       }
+     ],
+     "usb": [],
+     "summary": {
+       "total_devices": 1,
+       "pcie_count": 1,
+       "usb_count": 0
+     }
+   }
+   ```
+
+6. **Restart the Unraid Monitor add-on** - the Coral TPU sensors will appear automatically
+
+#### Sensors Created
+
+For **PCIe/M.2 Coral TPU**:
+- `Coral TPU 0 Temperature` - Current temperature in °C
+- `Coral TPU 0 Status` - Throttle state (Normal, Throttled 250 MHz, Throttled 125 MHz, etc.)
+- `Coral TPU 0` - Presence binary sensor
+
+For **USB Coral TPU**:
+- `Coral USB 0` - Presence binary sensor
+- `Coral USB 0 Initialized` - Whether the TPU has been accessed by an application
+
+Summary:
+- `Coral TPU Count` - Total number of Coral devices detected
+
+#### Making the Script Persistent
+
+The script will be lost after an Unraid reboot. To make it persistent:
+
+1. **Using User Scripts plugin** (recommended):
+   - Install the "User Scripts" plugin from Community Applications
+   - Create a new script that runs "At First Array Start Only"
+   - Add the commands to create the directory and copy the script
+
+2. **Using the Go file**:
+   Add to `/boot/config/go`:
+   ```bash
+   mkdir -p /usr/local/emhttp/plugins/coral
+   cp /boot/config/plugins/coral/coral_status.php /usr/local/emhttp/plugins/coral/
+   ```
+
+   And save the PHP file to `/boot/config/plugins/coral/coral_status.php` (flash drive persists across reboots)
+
+#### Troubleshooting Coral TPU
+
+**No sensors appearing:**
+- Check add-on logs for: `Coral TPU: no working endpoint found`
+- Verify the PHP script is accessible at the URL above
+- Ensure the Coral driver is installed (check for `/dev/apex0` or `lsusb` showing Coral device)
+
+**Temperature showing 0 or missing:**
+- USB Coral TPUs do not have temperature sensors (hardware limitation)
+- For PCIe, check that `/sys/class/apex/apex_0/temp` exists and is readable
+
+**Verify Coral is detected on Unraid:**
+```bash
+# For PCIe Coral
+ls -la /sys/class/apex/
+cat /sys/class/apex/apex_0/temp
+
+# For USB Coral
+lsusb | grep -E "1a6e:089a|18d1:9302"
+```
 
 ## Troubleshooting
 
