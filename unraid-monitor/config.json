@@ -1,6 +1,6 @@
 {
   "name": "Unraid Monitor",
-  "version": "2.3.1_1.8.26",
+  "version": "2.3.1_1.9.26",
   "slug": "unraid-monitor",
   "description": "Monitor Unraid servers via MQTT with GraphQL support",
   "url": "https://github.com/B0st0wn/Unraid-Monitor",

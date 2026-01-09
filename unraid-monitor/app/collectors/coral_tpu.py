@@ -15,9 +15,10 @@ from .base import EntityUpdate, QueryCollector
 
 # Endpoint paths to try in order of preference
 ENDPOINT_PATHS = [
-    '/plugins/coral/coral_status.php',        # Future official plugin
-    '/plugins/dynamix/coral_status.php',      # Manual install location
-    '/state/coral_status.json',               # User Scripts output
+    '/plugins/hass/coral_status.php',         # Recommended location
+    '/plugins/coral/coral_status.php',
+    '/plugins/dynamix/coral_status.php',
+    '/state/coral_status.json',
 ]
 
 

@@ -1,125 +1,90 @@
 """
 Memory information collector for Unraid
-Collects detailed RAM usage including VM and Docker breakdown if available
+Collects detailed RAM usage including VM and Docker breakdown
+
+Requires memory_status.php to be installed on the Unraid server.
+See extras/memory_status.php for installation instructions.
 """
-import psutil
 from typing import Any, Dict, List, Optional
 from .base import EntityUpdate, QueryCollector
 
 
+# Endpoint paths to try in order of preference
+ENDPOINT_PATHS = [
+    '/plugins/hass/memory_status.php',        # Recommended location
+    '/plugins/unraid-monitor/memory_status.php',
+    '/plugins/dynamix/memory_status.php',
+    '/state/memory_status.json',
+]
+
+
 class MemoryCollector(QueryCollector):
     """
-    Collects memory statistics from Unraid via GraphQL with psutil fallback.
+    Collects memory statistics from Unraid via a PHP endpoint.
 
     Sensors created:
       - Memory Total (GiB)
       - Memory Used (GiB)
       - Memory Free (GiB)
-      - Memory System (GiB) - if available from GraphQL
-      - Memory VM (GiB) - if available from GraphQL
-      - Memory Docker (GiB) - if available from GraphQL
+      - Memory System (GiB)
+      - Memory VM (GiB)
+      - Memory Docker (GiB)
+
+    Requires legacy auth (Cookie) for HTTP access to the PHP endpoint.
     """
 
     name = 'memory'
-    query = None  # We'll try multiple queries dynamically
+    requires_legacy_auth = True
+    query = None  # Not GraphQL-based
 
-    # GraphQL queries to try in order
-    _queries = [
-        # Try info query first
-        """query { info { memory { total used free available cached buffers } } }""",
-        # Try dashboard query
-        """query { dashboard { memory { total free used system vm docker } } }""",
-        # Try os query
-        """query { os { memory { totalBytes usedBytes freeBytes availableBytes } } }""",
-    ]
-
-    def __init__(self, gql_client, logger, scan_interval: int):
+    def __init__(self, gql_client, logger, scan_interval: int, legacy_ctx: Optional[Any] = None):
         self.gql = gql_client
         self.logger = logger
         self.interval = scan_interval
-        self._working_query: Optional[str] = None
-        self._graphql_failed = False
+        self.legacy_ctx = legacy_ctx
+        self._endpoint: Optional[str] = None
+        self._endpoint_checked = False
 
     async def fetch(self) -> Dict[str, Any]:
-        """Fetch memory data from GraphQL, falling back to psutil"""
-        # Try GraphQL first (unless it's already failed)
-        if not self._graphql_failed:
-            data = await self._try_graphql_queries()
-            if data:
-                return data
+        """Fetch memory data from the PHP endpoint on Unraid"""
+        if not self.legacy_ctx:
+            self.logger.debug('Memory: legacy context missing (no username/password configured); skipping')
+            return {}
 
-        # Fallback to psutil
-        return await self._fetch_from_psutil()
+        # Find working endpoint on first call
+        if not self._endpoint_checked:
+            await self._discover_endpoint()
+            self._endpoint_checked = True
 
-    async def _try_graphql_queries(self) -> Optional[Dict[str, Any]]:
-        """Try GraphQL queries in order until one works"""
-        queries = list(self._queries)
+        if not self._endpoint:
+            return {}
 
-        # Use cached working query first if we have one
-        if self._working_query:
-            queries = [self._working_query] + [q for q in queries if q != self._working_query]
-
-        for query in queries:
-            try:
-                result = await self.gql.query(query)
-                if result:
-                    memory_data = self._extract_memory_data(result)
-                    if memory_data:
-                        self._working_query = query
-                        self.logger.debug(f'Memory: using GraphQL query')
-                        return {'source': 'graphql', 'data': memory_data}
-            except Exception as e:
-                self.logger.debug(f'Memory GraphQL query failed: {e}')
-                continue
-
-        # Mark GraphQL as failed so we don't keep trying
-        self._graphql_failed = True
-        self.logger.info('Memory: GraphQL queries not available, using psutil fallback')
-        return None
-
-    def _extract_memory_data(self, result: Dict) -> Optional[Dict]:
-        """Extract memory data from various possible response structures"""
-        if not result:
-            return None
-
-        # Try info.memory
-        if 'info' in result and result['info']:
-            memory = result['info'].get('memory')
-            if memory and isinstance(memory, dict):
-                return memory
-
-        # Try dashboard.memory
-        if 'dashboard' in result and result['dashboard']:
-            memory = result['dashboard'].get('memory')
-            if memory and isinstance(memory, dict):
-                return memory
-
-        # Try os.memory
-        if 'os' in result and result['os']:
-            memory = result['os'].get('memory')
-            if memory and isinstance(memory, dict):
-                return memory
-
-        return None
-
-    async def _fetch_from_psutil(self) -> Dict[str, Any]:
-        """Fallback: fetch memory info via psutil (reads /proc/meminfo)"""
         try:
-            mem = psutil.virtual_memory()
-            return {
-                'source': 'psutil',
-                'data': {
-                    'total': mem.total,
-                    'used': mem.used,
-                    'free': mem.free,
-                    'available': mem.available,
-                    'cached': getattr(mem, 'cached', 0),
-                    'buffers': getattr(mem, 'buffers', 0),
-                    'percent': mem.percent
-                }
-            }
+            self.logger.debug(f'Memory: fetching from {self._endpoint}')
+            r = await self.legacy_ctx.http_get(self._endpoint, timeout=30)
+
+            if r.status_code == 404:
+                self.logger.debug(f'Memory: endpoint {self._endpoint} returned 404')
+                return {}
+
+            if r.status_code != 200:
+                self.logger.warning(f'Memory fetch failed: HTTP {r.status_code}')
+                return {}
+
+            try:
+                data = r.json()
+            except Exception as je:
+                self.logger.warning(f'Memory: failed to parse JSON response: {je}')
+                return {}
+
+            if not data or 'memory' not in data:
+                self.logger.debug('Memory: empty or invalid response from endpoint')
+                return {}
+
+            return data.get('memory', {})
+
         except Exception as e:
-            self.logger.error(f'Memory psutil fetch failed: {e}')
+            self.logger.error(f'Memory fetch error: {e}')
             return {}
 
     async def parse(self, data: Dict[str, Any]) -> List[EntityUpdate]:
@@ -129,31 +94,23 @@ class MemoryCollector(QueryCollector):
         if not data:
             return updates
 
-        source = data.get('source', 'unknown')
-        mem_data = data.get('data', {})
+        # Extract values (PHP script provides both bytes and GiB)
+        total_bytes = data.get('total', 0)
+        used_bytes = data.get('used', 0)
+        free_bytes = data.get('free', 0)
+        available_bytes = data.get('available', 0)
+        system_bytes = data.get('system', 0)
+        vm_bytes = data.get('vm', 0)
+        docker_bytes = data.get('docker', 0)
+        percent_used = data.get('percent_used', 0)
 
-        if not mem_data:
-            return updates
-
-        # Convert values to bytes (handles various input formats)
-        total_bytes = self._to_bytes(mem_data.get('total') or mem_data.get('totalBytes', 0))
-        used_bytes = self._to_bytes(mem_data.get('used') or mem_data.get('usedBytes', 0))
-        free_bytes = self._to_bytes(mem_data.get('free') or mem_data.get('freeBytes', 0))
-        available_bytes = self._to_bytes(mem_data.get('available') or mem_data.get('availableBytes', 0))
-
-        # Optional breakdown (if GraphQL provides it)
-        system_bytes = self._to_bytes(mem_data.get('system', 0))
-        vm_bytes = self._to_bytes(mem_data.get('vm', 0))
-        docker_bytes = self._to_bytes(mem_data.get('docker', 0))
-
-        # Calculate free if not provided
-        if free_bytes == 0 and total_bytes > 0 and used_bytes > 0:
-            free_bytes = total_bytes - used_bytes
-
-        # Convert to GiB
-        total_gib = self._bytes_to_gib(total_bytes)
-        used_gib = self._bytes_to_gib(used_bytes)
-        free_gib = self._bytes_to_gib(free_bytes)
+        # Use pre-calculated GiB values from PHP if available, otherwise convert
+        total_gib = data.get('total_gib') or self._bytes_to_gib(total_bytes)
+        used_gib = data.get('used_gib') or self._bytes_to_gib(used_bytes)
+        free_gib = data.get('free_gib') or self._bytes_to_gib(free_bytes)
+        system_gib = data.get('system_gib') or self._bytes_to_gib(system_bytes)
+        vm_gib = data.get('vm_gib') or self._bytes_to_gib(vm_bytes)
+        docker_gib = data.get('docker_gib') or self._bytes_to_gib(docker_bytes)
 
         # Memory Total sensor
         if total_gib > 0:
@@ -168,7 +125,6 @@ class MemoryCollector(QueryCollector):
                 state=total_gib,
                 attributes={
                     'bytes': total_bytes,
-                    'source': source
                 },
                 unique_id_suffix='memory_total',
                 retain=True,
@@ -176,7 +132,7 @@ class MemoryCollector(QueryCollector):
             ))
 
         # Memory Used sensor
-        if total_gib > 0:  # Only show if we have total
+        if total_gib > 0:
             updates.append(EntityUpdate(
                 sensor_type='sensor',
                 payload={
@@ -188,7 +144,7 @@ class MemoryCollector(QueryCollector):
                 state=used_gib,
                 attributes={
                     'bytes': used_bytes,
-                    'percent': round((used_bytes / total_bytes) * 100, 1) if total_bytes > 0 else 0
+                    'percent': percent_used
                 },
                 unique_id_suffix='memory_used',
                 retain=False,
@@ -196,7 +152,7 @@ class MemoryCollector(QueryCollector):
             ))
 
         # Memory Free sensor
-        if total_gib > 0:  # Only show if we have total
+        if total_gib > 0:
             updates.append(EntityUpdate(
                 sensor_type='sensor',
                 payload={
@@ -209,15 +165,15 @@ class MemoryCollector(QueryCollector):
                 attributes={
                     'bytes': free_bytes,
                     'available_bytes': available_bytes,
-                    'available_gib': self._bytes_to_gib(available_bytes)
+                    'available_gib': data.get('available_gib') or self._bytes_to_gib(available_bytes)
                 },
                 unique_id_suffix='memory_free',
                 retain=False,
                 expire_after=max(self.interval * 3, 120),
             ))
 
-        # Memory breakdown sensors (only if available from GraphQL)
-        if system_bytes > 0:
+        # Memory System sensor
+        if system_gib > 0:
             updates.append(EntityUpdate(
                 sensor_type='sensor',
                 payload={
@@ -226,14 +182,15 @@ class MemoryCollector(QueryCollector):
                     'icon': 'mdi:cog',
                     'state_class': 'measurement',
                 },
-                state=self._bytes_to_gib(system_bytes),
+                state=system_gib,
                 attributes={'bytes': system_bytes},
                 unique_id_suffix='memory_system',
                 retain=False,
                 expire_after=max(self.interval * 3, 120),
             ))
 
-        if vm_bytes > 0:
+        # Memory VM sensor
+        if vm_gib > 0:
             updates.append(EntityUpdate(
                 sensor_type='sensor',
                 payload={
@@ -242,14 +199,15 @@ class MemoryCollector(QueryCollector):
                     'icon': 'mdi:monitor',
                     'state_class': 'measurement',
                 },
-                state=self._bytes_to_gib(vm_bytes),
+                state=vm_gib,
                 attributes={'bytes': vm_bytes},
                 unique_id_suffix='memory_vm',
                 retain=False,
                 expire_after=max(self.interval * 3, 120),
             ))
 
-        if docker_bytes > 0:
+        # Memory Docker sensor
+        if docker_gib > 0:
             updates.append(EntityUpdate(
                 sensor_type='sensor',
                 payload={
@@ -258,7 +216,7 @@ class MemoryCollector(QueryCollector):
                     'icon': 'mdi:docker',
                     'state_class': 'measurement',
                 },
-                state=self._bytes_to_gib(docker_bytes),
+                state=docker_gib,
                 attributes={'bytes': docker_bytes},
                 unique_id_suffix='memory_docker',
                 retain=False,
@@ -267,31 +225,43 @@ class MemoryCollector(QueryCollector):
 
         if updates:
             self.logger.debug(
-                f'Memory ({source}): Total={total_gib} GiB, Used={used_gib} GiB, Free={free_gib} GiB'
+                f'Memory: Total={total_gib} GiB, Used={used_gib} GiB, Free={free_gib} GiB, '
+                f'System={system_gib} GiB, VM={vm_gib} GiB, Docker={docker_gib} GiB'
             )
 
         return updates
 
-    @staticmethod
-    def _to_bytes(value: Any) -> int:
-        """Convert value to bytes (handles various input formats)"""
-        if value is None:
-            return 0
-        try:
-            v = int(value)
-            # If value is very small, it might be in KB, MB, or GB
-            # Assume raw bytes if > 1000000 (1MB)
-            return v
-        except (ValueError, TypeError):
+    async def _discover_endpoint(self) -> None:
+        """Try multiple endpoint paths to find a working memory_status script"""
+        if not self.legacy_ctx:
+            return
+
+        for endpoint in ENDPOINT_PATHS:
             try:
-                return int(float(value))
-            except Exception:
-                return 0
+                self.logger.debug(f'Memory: checking endpoint {endpoint}')
+                r = await self.legacy_ctx.http_get(endpoint, timeout=10)
+
+                if r.status_code == 200:
+                    try:
+                        data = r.json()
+                        if isinstance(data, dict) and 'memory' in data:
+                            self._endpoint = endpoint
+                            self.logger.info(f'Memory: found working endpoint at {endpoint}')
+                            return
+                    except Exception:
+                        self.logger.debug(f'Memory: endpoint {endpoint} returned non-JSON response')
+                        continue
+
+            except Exception as e:
+                self.logger.debug(f'Memory: endpoint {endpoint} check failed: {e}')
+                continue
+
+        self.logger.info('Memory: no working endpoint found. Install memory_status.php on Unraid server.')
 
     @staticmethod
     def _bytes_to_gib(bytes_val: int) -> float:
         """Convert bytes to GiB with 2 decimal precision"""
-        if bytes_val <= 0:
+        if not bytes_val or bytes_val <= 0:
             return 0.0
         return round(bytes_val / (1024 ** 3), 2)
 
